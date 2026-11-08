@@ -1,0 +1,16 @@
+{
+  "name": "Wardens of Thornhold",
+  "short_name": "Thornhold",
+  "description": "Asymmetric online deck-building board game for 2–5 friends.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1e2433",
+  "theme_color": "#1e2433",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

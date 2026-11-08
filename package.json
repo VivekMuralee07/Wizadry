@@ -1,0 +1,12 @@
+{
+  "name": "wardens-of-thornhold",
+  "version": "1.0.0",
+  "description": "Online asymmetric deck-building board game for 2-5 players",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

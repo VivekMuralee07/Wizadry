@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e2433">
+<title>Wardens of Thornhold</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Alegreya+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- HOME -->
+<section id="home" class="screen">
+  <div class="hero">
+    <h1>Wardens of Thornhold</h1>
+    <p class="lede">The Hollow has slipped into the academy. Wardens race to raise two Ward Shields; one friend plays the Hollow and tries to seize the castle first.</p>
+  </div>
+  <div class="panel narrow">
+    <label for="name">Your name</label>
+    <input id="name" maxlength="16" placeholder="e.g. Vivek" autocomplete="nickname">
+    <button id="createBtn" class="primary">Create a room</button>
+    <div class="joinrow">
+      <input id="codeIn" maxlength="4" placeholder="Code" autocapitalize="characters">
+      <button id="joinBtn">Join</button>
+    </div>
+    <button class="link" data-open="rules">How to play</button>
+  </div>
+</section>
+
+<!-- ROOM -->
+<section id="room" class="screen hidden">
+  <div class="panel narrow">
+    <p class="muted">Room code</p>
+    <div class="bigcode" id="roomCode">----</div>
+    <button id="shareBtn">Share invite</button>
+    <h2>Choose your side</h2>
+    <div id="roleChips" class="chips"></div>
+    <h2>Players <span id="pcount" class="muted"></span></h2>
+    <ul id="plist" class="plist"></ul>
+    <p id="startHint" class="muted small"></p>
+    <button id="startBtn" class="primary">Start game</button>
+    <button id="leaveBtn" class="link">Leave room</button>
+    <button class="link" data-open="rules">How to play</button>
+  </div>
+</section>
+
+<!-- GAME -->
+<section id="game" class="screen hidden">
+  <header class="topbar">
+    <span class="tcode" id="gCode"></span>
+    <span id="turnLine" class="turnline"></span>
+    <button class="icon" data-open="log" aria-label="Game log">📜</button>
+    <button class="icon" data-open="rules" aria-label="Rules">?</button>
+  </header>
+  <div class="gamegrid">
+    <div class="boardcol">
+      <div class="boardwrap" id="boardWrap"><svg id="board" viewBox="0 0 1000 1000" role="img" aria-label="Map of Thornhold"></svg></div>
+      <div class="boardtools">
+        <button id="zoomBtn" class="small">Zoom 1×</button>
+        <span id="nodeInfo" class="nodeinfo">Tap a space to see what it does.</span>
+      </div>
+    </div>
+    <div class="sidecol">
+      <div id="banner" class="banner"></div>
+      <div id="cardPanel"></div>
+      <div id="hand" class="hand"></div>
+      <div id="actions" class="actions"></div>
+      <div id="mine" class="mine"></div>
+      <div id="tracks"></div>
+      <div id="players"></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODALS -->
+<div id="modal" class="modal hidden"><div class="sheet" id="sheet"></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<template id="rulesTpl">
+  <h2>How to play Wardens of Thornhold</h2>
+  <p>2–5 players. One player is <b>the Hollow</b>, everyone else is a <b>Warden</b> (Ember, Tide, Gale or Thorn). Wardens compete with each other <i>and</i> race the Hollow: the first Warden to raise <b>2 Ward Shields</b> wins. The Hollow wins by claiming all 3 Shadow tokens and gathering its pawns at a secret target room.</p>
+
+  <h3>Your pieces</h3>
+  <p>Each Warden has 3 pawns that start in the Great Hall, plus a marker on the Valor track. The Hollow has 4–7 dark pawns (3 + number of Wardens); 4 start on the deployment spaces (◆), the rest wait in its pool. Everyone has their own 7-card starter deck and a hand of 5.</p>
+
+  <h3>Winning as a Warden</h3>
+  <p>Stand a pawn on a Shield space (🛡) while holding all three items, and you trade them in for that Shield:</p>
+  <ul>
+    <li><b>A Tome</b> — visit the Library (📖) and pick one of the two face-up Tomes. Its bonus happens immediately. You can hold one Tome at a time.</li>
+    <li><b>A Scroll</b> — you hold 3 secret Location cards (shown under “Your secrets”). The moment you have pawns in 2 of those 3 places, you earn a Scroll automatically. After your first Scroll you draw back up to 3 locations; after the second you get no more.</li>
+    <li><b>A Seeker Lens 🔍 or a Circle Sigil ⭕</b> — whichever the Shield shows. Get the Lens by being alone at the top of the Valor track on space 5 or higher. Get a Sigil by entering the Hidden Hall, which only appears while any Warden is on Valor 5+.</li>
+  </ul>
+  <p>Raise any 2 Shields and you win instantly.</p>
+
+  <h3>Your turn as a Warden</h3>
+  <p>Take <b>one main action</b>, then tap <b>End turn</b>:</p>
+  <ul>
+    <li><b>Play a card</b> — its effect happens first, then you move. A single value (e.g. 3) moves one pawn up to 3 spaces. A double value (e.g. 3+3) moves two different pawns 3 each, or one pawn 6 (turn on “Combine”).</li>
+    <li><b>Learn</b> — discard 1 card to take one of the 2 cards in the Spell row or the hidden top card, or discard 2 cards to take an Advanced card and climb 1 Valor. Learned cards go on top of your deck. You need a pawn outside a protected space to Learn.</li>
+    <li><b>Replenish</b> — discard any cards, draw back up to 5, and stand up your stunned pawns. <b>But the Shadow Path moves one step closer to night.</b></li>
+  </ul>
+  <p><b>Free action — Discipline tokens.</b> End a move on a classroom with a token (✨⚗️⚔️🗝️🛡️🌿🐾) to pick it up (one at a time). From your next turn you can spend it to play an extra card of that discipline.</p>
+
+  <h3>Moving</h3>
+  <ul>
+    <li>Move between connected spaces. You can’t pass through a space twice or end where you started.</li>
+    <li><b>Obstacles</b> block Wardens: 🔒 Locked door, ✴ Ward spell, ≈ Water, ▲ Rubble. Cards like Unlatch or Master Key let you pass them.</li>
+    <li><b>Fly points</b> 🪶 — with a flying card you hop between any two fly points for free.</li>
+    <li><b>Secret passages</b> (dashed coloured lines) — usable only with Hidden Ways; they cost 1 step.</li>
+    <li><b>Bonus spaces</b> work when a pawn ends there: 🃏 draw a card, 🔁 extra main action, ✚ take a Spell card, ⭐ climb 1 Valor.</li>
+    <li>End your move on a Hollow pawn and you <b>clash</b>: both pawns are stunned and the Hollow pawn is pushed next door. Stunned pawns can’t move until you Replenish (or a card stands them up).</li>
+    <li><b>Protected spaces</b> (blue ring: Great Hall, Kitchens, Infirmary, Keeper’s Lodge, Hidden Hall) can never be entered by the Hollow.</li>
+  </ul>
+
+  <h3>The Hollow’s turn</h3>
+  <p>Either <b>play a card</b> (move, plus its effect if unlocked) or <b>Replenish</b> (stand up its pawns and draw to 5 — no discarding, and the Shadow Path does not move). Hollow pawns ignore all obstacles but can’t enter protected spaces. Bringing a pawn in from the pool costs 1 movement and must start on an empty ◆ space.</p>
+  <p><b>Bumping:</b> when a Hollow pawn ends on a Warden pawn, that pawn is sent back to the Great Hall and the Hollow pawn returns to the pool. The Hollow takes that Warden’s house marker. Holding every Warden’s marker pushes the Shadow Path forward one step. Once per turn, a bump also lets the Hollow look at 2 Hollow spells and put one on top of its deck.</p>
+  <p>Hollow card effects are colour-locked: <b>Dusk</b> effects work from the start, <b>Gloom</b> effects once the path reaches orange, <b>Night</b> effects once it reaches red.</p>
+
+  <h3>The Shadow Path</h3>
+  <p>A 16-space track that moves whenever a Warden Replenishes (and through events and markers). Landing on a ⚡ space reveals an event: Wardens suffer the first part, then the Hollow chooses either the event reward or that zone’s token (Cave Troll, Night Wyrm, Hollow Wraith). It must take each zone’s token before leaving that zone.</p>
+  <p>When the Hollow claims the Wraith token it reveals its <b>target room</b>. Claimed on the first red ⚡ it needs <b>3</b> pawns there at once; on the second, <b>2</b>; if the path reaches the last space, just <b>1</b>.</p>
+
+  <h3>The final night</h3>
+  <p>When the marker reaches the last space, everyone draws up to 5 and Replenish is gone. Play your last cards. If nobody wins before every hand is empty, the game is a draw.</p>
+
+  <h3>Reaction cards ⚡</h3>
+  <p><b>Aegis Ward</b> and <b>Counterspell</b> protect you automatically while they sit in your hand: Aegis cancels the next bump on you (the Hollow pawn is stunned instead), Counterspell cancels the next Hollow card or event aimed at you. You can also just play them to move.</p>
+
+  <h3>Tips</h3>
+  <ul>
+    <li>Replenishing helps you but speeds up the night. Learn and play efficiently.</li>
+    <li>Spread your pawns: one toward the Library, others toward your secret locations.</li>
+    <li>Hollow: guard the Shield spaces and the Library, and bump the Warden closest to winning.</li>
+  </ul>
+  <p class="muted small">Wardens of Thornhold is an original game inspired by asymmetric deck-building board games. All names and art are original.</p>
+</template>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/shared.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
