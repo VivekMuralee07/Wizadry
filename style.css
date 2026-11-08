@@ -250,3 +250,27 @@ select.lvl { min-height: 32px; padding: .2em .3em; font-size: .85rem; }
   body[data-zone="red"] .boardwrap::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: #fff; opacity: 0; animation: lightning 9s infinite; }
   @keyframes lightning { 0%, 93%, 100% { opacity: 0; } 94% { opacity: .35; } 95% { opacity: 0; } 96.5% { opacity: .22; } 97.5% { opacity: 0; } }
 }
+
+/* ---------- tutorial + exit ---------- */
+.infobtn { position: absolute; top: calc(14px + env(safe-area-inset-top, 0)); right: 14px; width: 46px; height: 46px; border-radius: 50%; padding: 0;
+  font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: 1.5rem; background: var(--stone2); border: 2px solid var(--gold); color: var(--gold); z-index: 3; }
+#home { position: relative; }
+.exitbtn { min-height: 38px; padding: .3em .8em; border-radius: 19px; background: #4a2630; border-color: #8a3a48; font-size: .9rem; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
+.tut { position: fixed; inset: 0; z-index: 35; background: rgba(8, 10, 18, .85); display: grid; place-items: center; padding: env(safe-area-inset-top, 0) .6rem env(safe-area-inset-bottom, 0); }
+.tutframe { width: min(100%, 44rem); background: var(--stone); border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+.tuthead { display: flex; align-items: center; gap: .5rem; padding: .5rem .5rem .5rem 1rem; }
+.tuttitle { flex: 1; font-family: 'IM Fell English', Georgia, serif; font-size: 1.1rem; }
+.tutsvg { display: block; width: 100%; height: auto; background: #16261b; }
+.tutbar { height: 4px; background: #1e2433; } .tutbar i { display: block; height: 100%; width: 0; background: var(--gold); }
+.tutcap { min-height: 4.6em; margin: .7rem 1rem .3rem; font-size: 1.05rem; line-height: 1.45; }
+.tutctl { display: flex; gap: .5rem; padding: 0 1rem; }
+.tutctl button { flex: 1; } .tutctl [data-play] { flex: 2; }
+.tutctl .on { background: var(--gold); color: #24180a; }
+.tutdots { display: flex; justify-content: center; gap: 6px; padding: .8rem 1rem 1rem; }
+.tutdots button { width: 12px; height: 12px; min-height: 0; padding: 0; border-radius: 50%; background: #4a5573; border: none; }
+.tutdots button.on { background: var(--gold); width: 26px; border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .infobtn.nudge { animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,164,65,.6); } 50% { box-shadow: 0 0 0 12px rgba(217,164,65,0); } }
+}

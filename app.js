@@ -80,6 +80,12 @@ document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
   if (o) openModal(o.dataset.open);
 });
+function openTutorial() { closeModal(); store.set('wt_seenTut', '1'); $('#infoBtn').classList.remove('nudge'); window.TUTORIAL.open(0); }
+$('#infoBtn').onclick = openTutorial;
+$('#tutBtn').onclick = openTutorial;
+if (!store.get('wt_seenTut')) $('#infoBtn').classList.add('nudge');
+$('#exitBtn').onclick = () => openModal('exit');
+function exitGame() { closeModal(); socket.emit('leave'); store.del('wt_room'); lobby = null; S = null; boardBuilt = false; prevLog = null; show('home'); }
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && ui.modal !== 'prompt') closeModal(); });
 
 function show(id) { ['home', 'room', 'game'].forEach(s => $('#' + s).classList.toggle('hidden', s !== id)); }
@@ -640,6 +646,15 @@ function openModal(kind) {
       ${lobby.host === pid ? '<button class="primary" id="rematch">Back to the lobby</button>' : '<p class="muted">The host can take everyone back to the lobby.</p>'}
       <button data-open="log">See the log</button> <button id="quit" class="link">Leave room</button></div>`;
   }
+  if (kind === 'exit') {
+    const over = !S || S.phase === 'over';
+    const others = lobby.players.some(p => !p.bot && p.id !== pid);
+    const msg = over ? 'You’ll go back to the home screen.'
+      : !others ? 'This ends the game, since everyone else is a bot.'
+      : `A Medium bot will take over your seat so the others can keep playing. To come back, join with code <b>${esc(lobby.code)}</b> and you’ll get your seat back.`;
+    h = `<h2>Leave this game?</h2><p>${msg}</p>
+      <div class="row"><button class="danger" id="doExit">Leave game</button><button data-close>Stay</button></div>`;
+  }
   if (kind === 'learn') {
     const L = ui.learn;
     const opts = [];
@@ -671,6 +686,8 @@ function openModal(kind) {
   sh.querySelectorAll('[data-r]').forEach(d => d.onclick = () => { const i = +d.dataset.r; ui.rep = ui.rep.includes(i) ? ui.rep.filter(x => x !== i) : ui.rep.concat(i); openModal('rep'); });
   const dr = $('#doRep'); if (dr) dr.onclick = () => { act({ type: 'replenish', discards: ui.rep }); closeModal(); };
   const rm = $('#rematch'); if (rm) rm.onclick = () => { socket.emit('rematch'); closeModal(); };
+  const dx = $('#doExit'); if (dx) dx.onclick = exitGame;
+  sh.querySelectorAll('[data-tut]').forEach(b => b.onclick = openTutorial);
   const q = $('#quit'); if (q) q.onclick = () => { closeModal(); socket.emit('leave'); store.del('wt_room'); lobby = null; S = null; show('home'); };
 }
 function closeModal() { ui.modal = null; $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }

@@ -10,6 +10,7 @@ Online asymmetric deck-building board game for 2–5 friends (1 Hollow vs 1–4 
 | `bots.js` | Easy / Medium / Hard bot AI (server only) |
 | `shared.js` | Map, cards, events, pathfinding (server + browser) |
 | `index.html`, `app.js`, `style.css` | The game client + full in-game rules |
+| `tutorial.js` | Animated 9-scene tutorial (the **i** button) |
 | `manifest.json`, `sw.js`, `icon-192.png`, `icon-512.png` | PWA, ready for PWABuilder → Android APK |
 | `package.json` | Dependencies and start script |
 

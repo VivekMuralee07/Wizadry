@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 // Files are flat at the repo root; only serve the public ones.
-const PUBLIC = ['index.html', 'app.js', 'style.css', 'shared.js', 'manifest.json', 'sw.js', 'icon-192.png', 'icon-512.png'];
+const PUBLIC = ['index.html', 'app.js', 'style.css', 'shared.js', 'manifest.json', 'sw.js', 'icon-192.png', 'icon-512.png', 'tutorial.js'];
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 PUBLIC.forEach(f => app.get('/' + f, (req, res) => res.sendFile(path.join(__dirname, f))));
 // Android app links: works whether assetlinks.json is at the repo root or inside a .well-known folder

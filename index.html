@@ -17,6 +17,7 @@
 
 <!-- HOME -->
 <section id="home" class="screen">
+  <button id="infoBtn" class="infobtn" aria-label="Watch the tutorial">i</button>
   <div class="hero">
     <h1>Wardens of Thornhold</h1>
     <p class="lede">The Hollow has slipped into the academy. Wardens race to raise two Ward Shields; one friend plays the Hollow and tries to seize the castle first.</p>
@@ -30,7 +31,8 @@
       <input id="codeIn" maxlength="4" placeholder="Code" autocapitalize="characters">
       <button id="joinBtn">Join</button>
     </div>
-    <button class="link" data-open="rules">How to play</button>
+    <button id="tutBtn">▶ Watch the tutorial</button>
+    <button class="link" data-open="rules">Read the full rules</button>
   </div>
 </section>
 
@@ -66,6 +68,7 @@
     <button class="icon" id="muteBtn" aria-label="Sound on or off">🔊</button>
     <button class="icon" data-open="log" aria-label="Game log">📜</button>
     <button class="icon" data-open="rules" aria-label="Rules">?</button>
+    <button class="exitbtn" id="exitBtn" aria-label="Exit game">Exit</button>
   </header>
   <div class="gamegrid">
     <div class="boardcol">
@@ -95,6 +98,7 @@
 
 <template id="rulesTpl">
   <h2>How to play Wardens of Thornhold</h2>
+  <button class="primary" data-tut>▶ Watch the animated tutorial</button>
   <p>2–5 players. One player is <b>the Hollow</b>, everyone else is a <b>Warden</b> (Ember, Tide, Gale or Thorn). Wardens compete with each other <i>and</i> race the Hollow: the first Warden to raise <b>2 Ward Shields</b> wins. The Hollow wins by claiming all 3 Shadow tokens and gathering its pawns at a secret target room.</p>
 
   <h3>Your pieces</h3>
@@ -161,6 +165,7 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="/shared.js"></script>
+<script src="/tutorial.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
