@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.vivek.wizadry.twa",
+        "sha256_cert_fingerprints": ["BF:03:F6:83:4F:22:5A:28:68:89:8C:B0:93:07:F1:86:67:9C:97:50:BC:59:E9:E4:D4:42:6B:C9:5F:33:04:BC"]
+      }
+    }]
