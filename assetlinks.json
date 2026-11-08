@@ -3,6 +3,6 @@
       "target": {
         "namespace": "android_app",
         "package_name": "com.vivek.wizadry.twa",
-        "sha256_cert_fingerprints": ["32:1E:06:36:F1:30:EF:50:F6:8F:0C:1C:12:CA:25:D2:17:36:C9:42:B4:80:E7:4E:A5:87:19:D1:96:DE:BB:77"]
+        "sha256_cert_fingerprints": ["AB:0C:15:85:27:E4:4C:E9:80:F3:8B:FE:35:C9:1C:28:10:65:4B:1F:40:60:AF:23:11:35:E0:FB:7B:D8:4A:C4"]
       }
     }]
