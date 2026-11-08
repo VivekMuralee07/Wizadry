@@ -25,6 +25,7 @@
     <label for="name">Your name</label>
     <input id="name" maxlength="16" placeholder="e.g. Vivek" autocomplete="nickname">
     <button id="createBtn" class="primary">Create a room</button>
+    <button id="quickBtn" class="hollow">Play vs bots</button>
     <div class="joinrow">
       <input id="codeIn" maxlength="4" placeholder="Code" autocapitalize="characters">
       <button id="joinBtn">Join</button>
@@ -43,6 +44,13 @@
     <div id="roleChips" class="chips"></div>
     <h2>Players <span id="pcount" class="muted"></span></h2>
     <ul id="plist" class="plist"></ul>
+    <div id="botBox" class="botbox">
+      <h2>Add a bot</h2>
+      <div class="row"><label for="botSide" class="small" style="margin:0">Side</label>
+        <select id="botSide"><option value="auto">Any free seat</option><option value="shadow">The Hollow</option><option value="house">A Warden</option></select></div>
+      <div class="row"><button data-addbot="easy">+ Easy</button><button data-addbot="medium">+ Medium</button><button data-addbot="hard">+ Hard</button></div>
+      <p class="muted small">Easy plays loosely, Medium plans each move, Hard looks ahead and blocks your key spaces. Tap a side chip above to swap seats with a bot.</p>
+    </div>
     <p id="startHint" class="muted small"></p>
     <button id="startBtn" class="primary">Start game</button>
     <button id="leaveBtn" class="link">Leave room</button>
@@ -55,6 +63,7 @@
   <header class="topbar">
     <span class="tcode" id="gCode"></span>
     <span id="turnLine" class="turnline"></span>
+    <button class="icon" id="muteBtn" aria-label="Sound on or off">🔊</button>
     <button class="icon" data-open="log" aria-label="Game log">📜</button>
     <button class="icon" data-open="rules" aria-label="Rules">?</button>
   </header>
@@ -81,13 +90,15 @@
 <!-- MODALS -->
 <div id="modal" class="modal hidden"><div class="sheet" id="sheet"></div></div>
 <div id="toast" class="toast hidden"></div>
+<div id="splash" class="splash hidden" aria-live="polite"></div>
+<canvas id="confetti" class="confetti hidden"></canvas>
 
 <template id="rulesTpl">
   <h2>How to play Wardens of Thornhold</h2>
   <p>2–5 players. One player is <b>the Hollow</b>, everyone else is a <b>Warden</b> (Ember, Tide, Gale or Thorn). Wardens compete with each other <i>and</i> race the Hollow: the first Warden to raise <b>2 Ward Shields</b> wins. The Hollow wins by claiming all 3 Shadow tokens and gathering its pawns at a secret target room.</p>
 
   <h3>Your pieces</h3>
-  <p>Each Warden has 3 pawns that start in the Great Hall, plus a marker on the Valor track. The Hollow has 4–7 dark pawns (3 + number of Wardens); 4 start on the deployment spaces (◆), the rest wait in its pool. Everyone has their own 7-card starter deck and a hand of 5.</p>
+  <p>Each Warden has 3 pawns that start in the Great Hall, plus a marker on the Valor track. The Hollow has 3–7 dark pawns (3 in a 1-Warden game, otherwise 3 + number of Wardens); up to 4 start on the deployment spaces (◆), the rest wait in its pool. Everyone has their own 7-card starter deck and a hand of 5.</p>
 
   <h3>Winning as a Warden</h3>
   <p>Stand a pawn on a Shield space (🛡) while holding all three items, and you trade them in for that Shield:</p>
@@ -120,18 +131,24 @@
 
   <h3>The Hollow’s turn</h3>
   <p>Either <b>play a card</b> (move, plus its effect if unlocked) or <b>Replenish</b> (stand up its pawns and draw to 5 — no discarding, and the Shadow Path does not move). Hollow pawns ignore all obstacles but can’t enter protected spaces. Bringing a pawn in from the pool costs 1 movement and must start on an empty ◆ space.</p>
-  <p><b>Bumping:</b> when a Hollow pawn ends on a Warden pawn, that pawn is sent back to the Great Hall and the Hollow pawn returns to the pool. The Hollow takes that Warden’s house marker. Holding every Warden’s marker pushes the Shadow Path forward one step. Once per turn, a bump also lets the Hollow look at 2 Hollow spells and put one on top of its deck.</p>
+  <p><b>Bumping:</b> when a Hollow pawn ends on a Warden pawn, that pawn is sent back to the Great Hall and the Hollow pawn returns to the pool. The Hollow takes that Warden’s house marker. Holding every Warden’s marker pushes the Shadow Path forward one step (with only one Warden, it takes 2 bumps). Once per turn, a bump also lets the Hollow look at 2 Hollow spells and put one on top of its deck.</p>
   <p>Hollow card effects are colour-locked: <b>Dusk</b> effects work from the start, <b>Gloom</b> effects once the path reaches orange, <b>Night</b> effects once it reaches red.</p>
 
   <h3>The Shadow Path</h3>
   <p>A 16-space track that moves whenever a Warden Replenishes (and through events and markers). Landing on a ⚡ space reveals an event: Wardens suffer the first part, then the Hollow chooses either the event reward or that zone’s token (Cave Troll, Night Wyrm, Hollow Wraith). It must take each zone’s token before leaving that zone.</p>
   <p>When the Hollow claims the Wraith token it reveals its <b>target room</b>. Claimed on the first red ⚡ it needs <b>3</b> pawns there at once; on the second, <b>2</b>; if the path reaches the last space, just <b>1</b>.</p>
 
+  <h3>The night creeps on</h3>
+  <p>If the Shadow Path hasn’t moved for 3 full rounds, it advances 1 space at the end of the Hollow’s turn. Everyone has a <b>hand limit of 8</b>: extra cards are discarded at random when you end your turn.</p>
+
   <h3>The final night</h3>
   <p>When the marker reaches the last space, everyone draws up to 5 and Replenish is gone. Play your last cards. If nobody wins before every hand is empty, the game is a draw.</p>
 
   <h3>Reaction cards ⚡</h3>
   <p><b>Aegis Ward</b> and <b>Counterspell</b> protect you automatically while they sit in your hand: Aegis cancels the next bump on you (the Hollow pawn is stunned instead), Counterspell cancels the next Hollow card or event aimed at you. You can also just play them to move.</p>
+
+  <h3>Bots</h3>
+  <p>The host can add bots in the lobby, or tap <b>Play vs bots</b> on the home screen. <b>Easy</b> bots play loosely, <b>Medium</b> bots plan the best move for each card, and <b>Hard</b> bots look ahead, combine multi-moves, use tokens well and, as the Hollow, block the Library and Shield spaces you need. If a player leaves mid-game, a Medium bot takes over their seat until they rejoin.</p>
 
   <h3>Tips</h3>
   <ul>

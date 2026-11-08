@@ -17,7 +17,7 @@ function createGame(players) {
     acqDeck: [], row: [], adv: [], libDeck: [], libRow: [], locDeck: [],
     shadowAcq: [], events: {}, marker: 0, progress: { white: false, orange: false, red: false },
     target: null, need: 0, darkLocs: shuffle(W.DARK_LOCS.slice()),
-    markers: [], sigils: 4, lens: null, final: false, turn: null, prompts: [], log: []
+    markers: [], sigils: 4, quiet: 0, roundMark: 0, lens: null, final: false, turn: null, prompts: [], log: []
   };
   const inst = key => ({ uid: st.uid++, key });
 
@@ -33,7 +33,7 @@ function createGame(players) {
   st.order.push(sSeat);
   st.shadowSeat = sSeat;
 
-  const nPawns = 3 + houses.length;
+  const nPawns = houses.length === 1 ? 3 : 3 + houses.length;
   for (let i = 0; i < nPawns; i++) st.shadowPawns.push({ node: i < 4 ? W.DEPLOY[i] : null, stunned: false });
 
   const shieldTypes = shuffle(['lens', 'lens', 'lens', 'sigil', 'sigil', 'sigil']);
@@ -294,8 +294,9 @@ function bump(st, s, pi, si) {
   if (reactCard(st, s, 'bump')) { sp.stunned = true; pushAway(st, sp); return; }
   log(st, `👻 The Hollow bumps ${nm(st, s)} at ${NODES[pw.node].name} back to the Great Hall.`);
   pw.node = 'hall'; pw.stunned = false; sp.node = null; sp.stunned = false;
-  if (!st.markers.includes(s)) st.markers.push(s);
-  if (houseSeats(st).every(h => st.markers.includes(h))) {
+  const solo = houseSeats(st).length === 1;
+  if (!st.markers.includes(s) || solo) st.markers.push(s);
+  if (solo ? st.markers.length >= 2 : houseSeats(st).every(h => st.markers.includes(h))) {
     st.markers = []; log(st, 'The Hollow holds every house marker — the Shadow Path advances!'); advanceMarker(st);
   }
   if (!st.turn.bumpDraw && st.shadowAcq.length) {
@@ -343,6 +344,12 @@ function act(st, seat, a) {
       case 'end':
         if (!st.turn.took && !(st.final && !p.hand.length)) return err('Take a main action first (play a card, learn or replenish).');
         st.turn.card = null;
+        if (p.hand.length > 8) { discardRandom(st, seat, p.hand.length - 8); log(st, `${nm(st, seat)} is over the hand limit and discards down to 8.`); }
+        if (p.role === 'shadow') {
+          st.quiet = st.marker === st.roundMark ? (st.quiet || 0) + 1 : 0;
+          if (st.quiet >= 3 && !st.final) { st.quiet = 0; log(st, 'Three quiet rounds — the night creeps on.'); advanceMarker(st); }
+          st.roundMark = st.marker;
+        }
         st.turnIdx = (st.turnIdx + 1) % st.order.length;
         startTurn(st);
         return { ok: true };

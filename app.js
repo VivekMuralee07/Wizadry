@@ -21,15 +21,22 @@ socket.on('connect', () => {
   const code = store.get('wt_room');
   if (code) socket.emit('join', { code, name: store.get('wt_name') || 'Warden', pid }, r => { if (r && r.err) { store.del('wt_room'); show('home'); } });
 });
-socket.on('lobby', l => { lobby = l; store.set('wt_room', l.code); if (!l.started) S = null; render(); });
+socket.on('lobby', l => { lobby = l; store.set('wt_room', l.code); if (!l.started) { S = null; boardBuilt = false; prevLog = null; wonShown = false; } render(); });
 socket.on('state', s => {
   const myTurnNow = s.turn && s.turn.seat === s.you;
-  if (myTurnNow && lastTurnSeat !== s.you) beep();
+  if (myTurnNow && lastTurnSeat !== s.you) { sfx('turn'); if (navigator.vibrate) navigator.vibrate(60); }
   lastTurnSeat = s.turn ? s.turn.seat : null;
   if (S && S.turn && s.turn && (S.turn.seat !== s.turn.seat || !s.turn.card || (S.turn.card && s.turn.card && S.turn.card.used.length !== s.turn.card.used.length))) { ui.pawn = null; ui.direct = false; }
   if (S && s.turn && (!S.turn || !s.turn.card || !S.turn.card || S.turn.card.key !== s.turn.card.key)) ui.combine = false;
-  S = s; render();
+  S = s; render(); processLog(s.log);
+  if (s.phase === 'over' && !wonShown) {
+    wonShown = true; const w = s.winner;
+    const good = (w.side === 'house' && w.seat === s.you) || (w.side === 'shadow' && s.seats[s.you].role === 'shadow');
+    sfx(good ? 'win' : w.side === 'draw' ? 'reveal' : 'lose');
+    embers(w.side === 'shadow' ? ['#a64dff', '#5b1a8a', '#ff4d6d'] : ['#d9a441', '#fff3c4', '#e2603f', '#4f8fe0']);
+  }
 });
+let wonShown = false;
 
 function act(a) {
   socket.emit('act', a, r => { if (r && !r.ok) toast(r.err); });
@@ -54,6 +61,8 @@ function beep() {
 // ---------- home / room ----------
 function myName() { const n = $('#name').value.trim() || 'Warden'; store.set('wt_name', n); return n; }
 $('#createBtn').onclick = () => socket.emit('create', { name: myName(), pid });
+$('#quickBtn').onclick = () => socket.emit('create', { name: myName(), pid, quick: true });
+$('#muteBtn').onclick = () => { muted = !muted; store.set('wt_mute', muted ? '1' : '0'); $('#muteBtn').textContent = muted ? '🔇' : '🔊'; };
 $('#joinBtn').onclick = () => {
   const code = $('#codeIn').value.trim().toUpperCase();
   if (code.length !== 4) return toast('Room codes have 4 letters.');
@@ -88,9 +97,13 @@ function renderRoom() {
   }).join('');
   $('#roleChips').querySelectorAll('button').forEach(b => b.onclick = () => socket.emit('role', { role: b.dataset.role, house: b.dataset.house }));
   $('#pcount').textContent = `(${lobby.players.length}/5)`;
+  const host = lobby.host === pid;
   $('#plist').innerHTML = lobby.players.map(p => `<li>${p.role === 'shadow' ? '<span class="diamond"></span>' : `<span class="dot" style="background:${W.HOUSES[p.house].color}"></span>`}
-    <span style="flex:1">${esc(p.name)}${p.id === lobby.host ? ' <span class="muted small">(host)</span>' : ''}</span>
-    <span class="muted small">${p.role === 'shadow' ? 'Hollow' : W.HOUSES[p.house].name}${p.online ? '' : ' · offline'}</span></li>`).join('');
+    <span style="flex:1">${p.bot ? '🤖 ' : ''}${esc(p.name)}${p.id === lobby.host ? ' <span class="muted small">(host)</span>' : ''}<br><span class="muted small">${p.role === 'shadow' ? 'Hollow' : W.HOUSES[p.house].name + ' Warden'}${p.online ? '' : ' · offline'}</span></span>
+    ${p.bot && host ? `<select class="lvl" data-lvl="${p.id}" aria-label="Bot difficulty">${['easy', 'medium', 'hard'].map(l => `<option value="${l}" ${p.bot === l ? 'selected' : ''}>${l[0].toUpperCase() + l.slice(1)}</option>`).join('')}</select><button class="small" data-rm="${p.id}" aria-label="Remove bot">✕</button>` : ''}</li>`).join('');
+  $('#plist').querySelectorAll('[data-rm]').forEach(b => b.onclick = () => socket.emit('removeBot', { id: b.dataset.rm }));
+  $('#plist').querySelectorAll('[data-lvl]').forEach(b => b.onchange = () => socket.emit('botLevel', { id: b.dataset.lvl, level: b.value }));
+  $('#botBox').classList.toggle('hidden', !host || lobby.players.length >= 5);
   const hasShadow = lobby.players.some(p => p.role === 'shadow');
   const houses = lobby.players.filter(p => p.role === 'house').length;
   const ready = hasShadow && houses >= 1;
@@ -178,35 +191,98 @@ function canMovePawn(i) {
 }
 
 // ---------- board ----------
+const HOUSE_GLYPH = { ember: '🔥', tide: '🌊', gale: '🌪', thorn: '🌹' };
+const NS = 'http://www.w3.org/2000/svg';
+let boardBuilt = false, decor = '';
+function seeded(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+function buildDecor() {
+  const N = W.NODES; const r = seeded(7); let s = '';
+  const clear = (x, y) => !(x > 185 && x < 905 && y > 30 && y < 615) && Object.values(N).every(n => Math.hypot(n.x - x, n.y - y) > 62) &&
+    ((x - 130) ** 2 / 125 ** 2 + (y - 805) ** 2 / 100 ** 2) > 1;
+  let trees = 0, tries = 0;
+  while (trees < 70 && tries++ < 4000) {
+    const x = r() * 1000, y = 560 + r() * 440;
+    const x2 = r() < .35 ? r() * 190 : x, y2 = r() < .35 ? r() * 600 : y;
+    const X = r() < .5 ? x : x2, Y = r() < .5 ? y : y2;
+    if (!clear(X, Y)) continue;
+    const h = 22 + r() * 18, g = r() < .5 ? '#1d3d27' : '#244a2f';
+    s += `<path d="M${X} ${Y - h} L${X + h * .55} ${Y + 4} L${X - h * .55} ${Y + 4}Z" fill="${g}"/><path d="M${X} ${Y - h * .65} L${X + h * .45} ${Y + 12} L${X - h * .45} ${Y + 12}Z" fill="${g}" opacity=".85"/>`;
+    trees++;
+  }
+  for (let i = 0; i < 40; i++) { const x = r() * 1000, y = 620 + r() * 380; if (clear(x, y)) s += `<circle cx="${x}" cy="${y}" r="${1 + r() * 2}" fill="#9fc58a" opacity=".25"/>`; }
+  return s;
+}
+function buildBoard() {
+  const svg = $('#board');
+  const hg = Object.entries(W.HOUSES).map(([k, h]) => `<radialGradient id="gH_${k}" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".35" stop-color="${h.color}"/><stop offset="1" stop-color="#1a1410"/></radialGradient>`).join('');
+  svg.innerHTML = `<defs>
+    <radialGradient id="gGround" cx="50%" cy="60%" r="75%"><stop offset="0" stop-color="#3f6e48"/><stop offset=".7" stop-color="#26462f"/><stop offset="1" stop-color="#14261a"/></radialGradient>
+    <pattern id="pStone" width="48" height="24" patternUnits="userSpaceOnUse"><rect width="48" height="24" fill="#555b73"/><path d="M0 0H48M0 12H48M0 24H48M12 0V12M36 0V12M0 12V24M24 12V24" stroke="#3e4358" stroke-width="2"/></pattern>
+    <linearGradient id="gFloor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4e5470"/><stop offset="1" stop-color="#3a3f55"/></linearGradient>
+    <linearGradient id="gWater" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a8ab8"/><stop offset="1" stop-color="#173350"/></linearGradient>
+    <radialGradient id="gMoon"><stop offset="0" stop-color="#fffbe8" stop-opacity=".9"/><stop offset=".25" stop-color="#fff2c4" stop-opacity=".35"/><stop offset="1" stop-color="#fff2c4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gNode" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#fff8e6"/><stop offset=".6" stop-color="#e6d3a6"/><stop offset="1" stop-color="#b49660"/></radialGradient>
+    <radialGradient id="gNodeOut" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#f2f6dc"/><stop offset=".6" stop-color="#c6d2a2"/><stop offset="1" stop-color="#8a9a66"/></radialGradient>
+    <radialGradient id="gNodeHid" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#f3eaff"/><stop offset="1" stop-color="#8e6cc4"/></radialGradient>
+    <radialGradient id="gHollow" cx="50%" cy="25%" r="80%"><stop offset="0" stop-color="#e2c6ff"/><stop offset=".4" stop-color="#8a3fc4"/><stop offset="1" stop-color="#1c0830"/></radialGradient>
+    <radialGradient id="gFog"><stop offset="0" stop-color="#cfd6e6" stop-opacity=".55"/><stop offset="1" stop-color="#cfd6e6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="gAura"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    ${hg}
+    <filter id="fShadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#000" flood-opacity=".55"/></filter>
+    <filter id="fGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g id="mapLayer"></g>
+  <g id="fogLayer" pointer-events="none">
+    <rect id="skyTint" x="0" y="0" width="1000" height="1000" fill="#000" opacity="0"/>
+    <ellipse class="fog f1" cx="300" cy="700" rx="420" ry="160" fill="url(#gFog)"/>
+    <ellipse class="fog f2" cx="760" cy="420" rx="380" ry="150" fill="url(#gFog)"/>
+    <ellipse class="fog f3" cx="500" cy="900" rx="460" ry="130" fill="url(#gFog)"/>
+  </g>
+  <g id="pawnLayer"></g>
+  <g id="fxLayer" pointer-events="none"></g>`;
+  decor = buildDecor();
+  boardBuilt = true;
+}
+
 function renderBoard() {
-  const N = W.NODES; const svg = $('#board');
-  let s = `<rect x="0" y="0" width="1000" height="1000" class="grounds"/>
-    <ellipse cx="130" cy="805" rx="120" ry="95" class="lakefill"/>
-    <path d="M760 720 Q880 760 940 860" stroke="var(--water)" stroke-width="26" fill="none" opacity=".8"/>
-    <rect x="200" y="45" width="690" height="555" rx="30" class="castle"/>`;
-  W.EDGES.forEach(([a, b, o]) => {
+  if (!boardBuilt) buildBoard();
+  const N = W.NODES;
+  let s = `<rect x="0" y="0" width="1000" height="1000" fill="url(#gGround)"/>
+    <circle cx="950" cy="50" r="170" fill="url(#gMoon)"/><circle cx="950" cy="50" r="26" fill="#fff8de"/>
+    <ellipse cx="130" cy="805" rx="128" ry="102" fill="#10273a" opacity=".6"/>
+    <ellipse cx="130" cy="805" rx="120" ry="95" fill="url(#gWater)"/>
+    <path d="M60 790 q30 -8 60 0 M95 830 q30 -8 60 0 M70 760 q20 -6 40 0" stroke="#bfe0ff" stroke-width="3" fill="none" opacity=".35" class="shimmer"/>
+    <path d="M760 720 Q880 760 940 860 T1000 990" stroke="#10273a" stroke-width="34" fill="none" opacity=".6"/>
+    <path d="M760 720 Q880 760 940 860 T1000 990" stroke="url(#gWater)" stroke-width="24" fill="none"/>
+    ${decor}
+    <rect x="206" y="55" width="690" height="555" rx="30" fill="#000" opacity=".45"/>
+    <rect x="200" y="45" width="690" height="555" rx="30" fill="url(#pStone)"/>
+    <rect x="218" y="63" width="654" height="519" rx="20" fill="url(#gFloor)" opacity=".92"/>`;
+  for (let x = 236; x < 860; x += 34) s += `<rect x="${x}" y="33" width="18" height="16" fill="#555b73" stroke="#3e4358" stroke-width="2"/>`;
+  [[205, 50], [885, 50], [205, 595], [885, 595]].forEach(([x, y]) => (s += `<circle cx="${x}" cy="${y}" r="30" fill="url(#pStone)" stroke="#2f3346" stroke-width="4"/><path d="M${x - 24} ${y - 8} L${x} ${y - 52} L${x + 24} ${y - 8}Z" fill="#5a2c3a" stroke="#2f1820" stroke-width="3"/>`));
+  [[575, 612], [665, 612], [790, 612]].forEach(([x, y]) => (s += `<g class="torch"><circle cx="${x}" cy="${y - 6}" r="16" fill="#ffb347" opacity=".25"/><path d="M${x} ${y - 18} q8 10 0 16 q-8 -6 0 -16Z" fill="#ffcf5a"/><rect x="${x - 2}" y="${y - 2}" width="4" height="12" fill="#3a2a1a"/></g>`));
+
+  W.EDGES.forEach(([a, b]) => {
     const A = N[a], B = N[b]; const hid = a === 'hidden' || b === 'hidden';
     if (hid && !S.hiddenOpen) return;
-    s += `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" class="edge ${hid ? 'hid' : ''}"/>`;
+    s += `<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" class="road ${hid ? 'hid' : ''}"/><line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" class="edge ${hid ? 'hid' : ''}"/>`;
   });
   W.SECRETS.forEach(([a, b, col]) => {
     const A = N[a], B = N[b]; const mx = (A.x + B.x) / 2 + (B.y - A.y) * .18, my = (A.y + B.y) / 2 - (B.x - A.x) * .18;
     s += `<path d="M${A.x} ${A.y} Q${mx} ${my} ${B.x} ${B.y}" class="secret" stroke="${col}"/>`;
   });
   W.EDGES.forEach(([a, b, o]) => {
-    if (!o) return; const A = N[a], B = N[b];
-    s += `<g class="obs"><circle cx="${(A.x + B.x) / 2}" cy="${(A.y + B.y) / 2}" r="14"/><text x="${(A.x + B.x) / 2}" y="${(A.y + B.y) / 2}">${W.OBS[o].icon}</text></g>`;
+    if (!o) return; const A = N[a], B = N[b]; const x = (A.x + B.x) / 2, y = (A.y + B.y) / 2;
+    s += `<g class="obs obs-${o}"><circle cx="${x}" cy="${y}" r="16"/><text x="${x}" y="${y}">${W.OBS[o].icon}</text></g>`;
   });
 
-  // reachable
   let reach = {};
   if (myTurn() && ui.pawn !== null && S.turn.card) reach = reachFor(ui.pawn);
   const myLocs = S.locs || [];
-
   for (const k in N) {
     const n = N[k];
     const hidClosed = n.hidden && !S.hiddenOpen;
-    const cls = ['node', n.castle ? '' : 'outside', n.prot ? 'prot' : '', n.hidden ? 'hid' : '', hidClosed ? 'closed' : '', reach[k] ? 'reach' : '', myLocs.includes(k) ? 'myloc' : '', S.target === k ? 'target' : ''].join(' ');
+    const cls = ['node', n.castle ? '' : 'outside', n.prot ? 'prot' : '', n.hidden ? 'hid' : '', hidClosed ? 'closed' : '', reach[k] ? 'reach' : '', myLocs.includes(k) ? 'myloc' : '', S.target === k ? 'target' : '', S.shields[k] ? 'shieldy' : ''].join(' ');
     const icons = [];
     if (n.library) icons.push('📖');
     if (n.fly) icons.push('🪶');
@@ -216,40 +292,177 @@ function renderBoard() {
     if (n.bonus === 'acquire') icons.push('✚');
     if (n.deploy) icons.push('◆');
     if (n.token && S.tokens[n.token] === k) icons.push(W.DISC[n.token].icon);
-    if (S.shields[k]) icons.push(S.shields[k] === 'lens' ? '🛡🔍' : '🛡⭕');
+    if (n.hidden) icons.push('🚪');
+    if (n.start) icons.push('🏰');
+    const fill = n.hidden ? 'url(#gNodeHid)' : n.castle ? 'url(#gNode)' : 'url(#gNodeOut)';
     const above = ['hidden', 'study', 'tower', 'clock'].includes(k);
     s += `<g class="${cls}" data-node="${k}">
-      <circle class="ring3" cx="${n.x}" cy="${n.y}" r="44"/>
-      <circle class="ring2" cx="${n.x}" cy="${n.y}" r="38"/>
-      <circle class="ring" cx="${n.x}" cy="${n.y}" r="34"/>
-      <circle class="base" cx="${n.x}" cy="${n.y}" r="30"/>
+      ${S.shields[k] ? `<circle class="aura" cx="${n.x}" cy="${n.y}" r="52" fill="url(#gAura)"/>` : ''}
+      <circle class="ring3" cx="${n.x}" cy="${n.y}" r="46"/>
+      <circle class="ring2" cx="${n.x}" cy="${n.y}" r="40"/>
+      <circle class="ring" cx="${n.x}" cy="${n.y}" r="36"/>
+      <circle class="base" cx="${n.x}" cy="${n.y}" r="31" fill="${fill}" filter="url(#fShadow)"/>
+      <circle cx="${n.x}" cy="${n.y}" r="25" fill="none" stroke="#7a5a28" stroke-opacity=".45" stroke-width="2"/>
       <text class="ico" x="${n.x}" y="${n.y}">${icons.slice(0, 2).join('')}</text>
-      <text class="lbl" x="${n.x}" y="${above ? n.y - 50 : n.y + 54}">${esc(n.name)}</text>
-      ${reach[k] ? `<text class="cost" x="${n.x + 30}" y="${n.y - 26}">${reach[k].cost}</text>` : ''}
+      ${S.shields[k] ? `<g transform="translate(${n.x - 40} ${n.y - 44})"><path d="M14 0 L28 5 L26 20 L14 30 L2 20 L0 5Z" fill="#d9a441" stroke="#5a3d10" stroke-width="2"/><text x="14" y="16" font-size="13" text-anchor="middle" dominant-baseline="central">${S.shields[k] === 'lens' ? '🔍' : '⭕'}</text></g>` : ''}
+      <text class="lbl" x="${n.x}" y="${above ? n.y - 52 : n.y + 56}">${esc(n.name)}</text>
+      ${reach[k] ? `<circle cx="${n.x + 30}" cy="${n.y - 30}" r="14" fill="#1f6b3a" stroke="#c9ffd9" stroke-width="2"/><text class="cost" x="${n.x + 30}" y="${n.y - 30}">${reach[k].cost}</text>` : ''}
     </g>`;
   }
+  $('#mapLayer').innerHTML = s;
 
-  // pawns
+  // atmosphere deepens along the Shadow Path
+  const zone = W.PATH[S.marker].zone;
+  const tint = { white: ['#0a1030', .12], orange: ['#3a1a00', .22], red: ['#3a0006', .32] }[zone];
+  const sky = $('#skyTint'); sky.setAttribute('fill', tint[0]); sky.setAttribute('opacity', tint[1] + S.marker * 0.006);
+  document.querySelectorAll('#fogLayer .fog').forEach(f => (f.style.opacity = 0.25 + S.marker * 0.03));
+  const fogCol = { white: '#cfd6e6', orange: '#c99a72', red: '#7a2a3c' }[zone];
+  document.querySelectorAll('#gFog stop').forEach(st => st.setAttribute('stop-color', fogCol));
+  document.body.dataset.zone = zone;
+  renderPawns();
+}
+
+function pawnSlots() {
   const at = {};
-  Object.keys(S.house).forEach(seat => S.house[seat].forEach((pw, i) => { (at[pw.node] = at[pw.node] || []).push({ kind: 'h', seat: +seat, i, pw }); }));
-  S.shadowPawns.forEach((pw, i) => { if (pw.node) (at[pw.node] = at[pw.node] || []).push({ kind: 's', i, pw }); });
+  Object.keys(S.house).forEach(seat => S.house[seat].forEach((pw, i) => { if (pw.node) (at[pw.node] = at[pw.node] || []).push({ key: `h${seat}_${i}`, kind: 'h', seat: +seat, i, pw }); }));
+  S.shadowPawns.forEach((pw, i) => { if (pw.node) (at[pw.node] = at[pw.node] || []).push({ key: `s${i}`, kind: 's', i, pw }); });
+  const pos = {};
   for (const k in at) {
-    const n = N[k]; const list = at[k];
+    const n = W.NODES[k], list = at[k];
     list.forEach((p, j) => {
-      const ang = (-150 + j * (300 / Math.max(1, list.length - 1 || 1))) * Math.PI / 180;
-      const r = list.length === 1 ? 0 : 40;
-      const x = n.x + (list.length === 1 ? 26 : Math.cos(ang) * r), y = n.y + (list.length === 1 ? 26 : Math.sin(ang) * r);
-      const mine = (p.kind === 'h' && p.seat === S.you) || (p.kind === 's' && me().role === 'shadow');
-      const ref = p.kind === 'h' ? p.i : p.i;
-      const sel = mine && ui.pawn === ref;
-      const cls = `pawn ${p.pw.stunned ? 'stun' : ''} ${sel ? 'sel' : ''} ${mine ? 'mine' : ''}`;
-      const data = mine ? `data-pawn="${ref}"` : '';
-      if (p.kind === 'h') s += `<circle ${data} class="${cls}" cx="${x}" cy="${y}" r="15" fill="${W.HOUSES[S.seats[p.seat].house].color}"/>`;
-      else s += `<rect ${data} class="${cls}" x="${x - 13}" y="${y - 13}" width="26" height="26" fill="var(--hollow)" transform="rotate(45 ${x} ${y})"/>`;
-      if (p.pw.stunned) s += `<text x="${x}" y="${y + 5}" text-anchor="middle" font-size="16" pointer-events="none">💫</text>`;
+      if (list.length === 1) { pos[p.key] = { ...p, x: n.x + 24, y: n.y + 22 }; return; }
+      const ang = (-160 + j * (320 / list.length)) * Math.PI / 180;
+      pos[p.key] = { ...p, x: n.x + Math.cos(ang) * 42, y: n.y + Math.sin(ang) * 42 };
     });
   }
-  svg.innerHTML = s;
+  return pos;
+}
+function renderPawns() {
+  const layer = $('#pawnLayer'); const pos = pawnSlots();
+  const all = [];
+  Object.keys(S.house).forEach(seat => S.house[seat].forEach((pw, i) => all.push(`h${seat}_${i}`)));
+  S.shadowPawns.forEach((pw, i) => all.push(`s${i}`));
+  all.forEach(key => {
+    let g = layer.querySelector(`[data-key="${key}"]`);
+    const isH = key[0] === 'h';
+    if (!g) {
+      g = document.createElementNS(NS, 'g'); g.setAttribute('data-key', key); g.setAttribute('class', 'pw');
+      if (isH) {
+        const seat = +key.slice(1).split('_')[0]; const h = S.seats[seat].house;
+        g.innerHTML = `<circle class="paura" r="26" fill="${W.HOUSES[h].color}" opacity=".35"/><circle class="pbody" r="17" fill="url(#gH_${h})" stroke="#fff3d0" stroke-width="3" filter="url(#fShadow)"/><text class="pglyph" y="1">${HOUSE_GLYPH[h]}</text><text class="pstun" y="-24">💫</text>`;
+      } else {
+        g.innerHTML = `<ellipse class="paura" rx="28" ry="24" fill="#a64dff" opacity=".35"/><path class="pbody" d="M0 -24 C14 -24 16 -8 16 4 L21 22 L10 15 L0 23 L-10 15 L-21 22 L-16 4 C-16 -8 -14 -24 0 -24Z" fill="url(#gHollow)" stroke="#1a0626" stroke-width="2.5" filter="url(#fShadow)"/><circle cx="-5" cy="-9" r="2.6" fill="#ffe24d"/><circle cx="5" cy="-9" r="2.6" fill="#ffe24d"/><text class="pstun" y="-30">💫</text>`;
+      }
+      layer.appendChild(g);
+    }
+    const p = pos[key];
+    const pw = isH ? S.house[key.slice(1).split('_')[0]][+key.split('_')[1]] : S.shadowPawns[+key.slice(1)];
+    if (!p) { g.classList.add('gone'); g.removeAttribute('data-pawn'); return; }
+    g.classList.remove('gone');
+    const mine = isH ? p.seat === S.you : me().role === 'shadow';
+    const ref = p.i;
+    g.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    g.classList.toggle('stun', !!pw.stunned);
+    g.classList.toggle('mine', mine && myTurn());
+    g.classList.toggle('sel', mine && ui.pawn === ref);
+    if (mine) g.setAttribute('data-pawn', ref); else g.removeAttribute('data-pawn');
+  });
+}
+
+// ---------- effects ----------
+let prevLog = null;
+function nodeIn(line) {
+  const names = Object.keys(W.NODES).sort((a, b) => W.NODES[b].name.length - W.NODES[a].name.length);
+  const i = line.lastIndexOf(' at ');
+  const tail = i >= 0 ? line.slice(i) : line;
+  return names.find(k => tail.includes(W.NODES[k].name)) || names.find(k => line.includes(W.NODES[k].name));
+}
+function fxAt(node, kind) {
+  const n = W.NODES[node]; if (!n) return;
+  const g = document.createElementNS(NS, 'g'); g.setAttribute('class', 'fx fx-' + kind);
+  g.style.transform = `translate(${n.x}px, ${n.y}px)`;
+  if (kind === 'clash') g.innerHTML = `<circle r="20" class="burst"/>` + Array.from({ length: 10 }, (_, i) => { const a = i * 36 * Math.PI / 180; return `<line x1="${Math.cos(a) * 18}" y1="${Math.sin(a) * 18}" x2="${Math.cos(a) * 48}" y2="${Math.sin(a) * 48}" class="spark"/>`; }).join('');
+  if (kind === 'bump') g.innerHTML = `<circle r="24" class="wisp"/><circle r="12" class="wisp w2"/>`;
+  if (kind === 'shield') g.innerHTML = `<rect x="-26" y="-420" width="52" height="440" class="pillar"/><circle r="40" class="burst gold"/>`;
+  if (kind === 'reveal') g.innerHTML = `<circle r="30" class="burst violet"/>`;
+  if (kind === 'step') g.innerHTML = `<circle r="12" class="ripple"/>`;
+  $('#fxLayer').appendChild(g);
+  setTimeout(() => g.remove(), 1800);
+}
+function splash(title, body, zone) {
+  const el = $('#splash');
+  el.innerHTML = `<div class="splashcard z-${zone || 'white'}"><div class="sz">${zone ? W.ZONES[zone].name : ''}</div><h2>${esc(title)}</h2>${body}</div>`;
+  el.classList.remove('hidden'); el.classList.remove('out'); void el.offsetWidth; el.classList.add('in');
+  clearTimeout(splash.h); splash.h = setTimeout(() => { el.classList.add('out'); setTimeout(() => el.classList.add('hidden'), 450); }, 2600);
+}
+function processLog(log) {
+  if (prevLog === null) { prevLog = log.slice(); return; }
+  const last = prevLog[prevLog.length - 1];
+  let start = last ? log.lastIndexOf(last) + 1 : 0;
+  if (start === 0 && last) start = Math.max(0, log.length - 6);
+  const fresh = log.slice(start);
+  prevLog = log.slice();
+  let moved = false;
+  fresh.forEach(line => {
+    if (line.startsWith('💥')) { const n = nodeIn(line); fxAt(n, 'clash'); sfx('clash'); shake(); }
+    else if (line.startsWith('👻')) { const n = nodeIn(line); fxAt(n, 'bump'); fxAt('hall', 'bump'); sfx('bump'); }
+    else if (line.startsWith('🛡')) { const n = nodeIn(line); fxAt(n, 'shield'); sfx('shield'); }
+    else if (line.startsWith('⚡ Event:')) {
+      const name = line.slice(9).split(' — ')[0]; const ev = Object.values(W.EVENTS).find(e => e.name === name);
+      if (ev) { splash(ev.name, `<p><b>Wardens:</b> ${esc(ev.houseText)}</p><p><b>Hollow may gain:</b> ${esc(ev.darkText)}</p>`, ev.zone); sfx('event'); }
+    }
+    else if (line.includes('reveals itself')) { fxAt('hidden', 'reveal'); sfx('reveal'); }
+    else if (line.startsWith('☠')) { splash('The Hollow strikes', `<p>${esc(line.slice(2))}</p>`, 'red'); sfx('event'); }
+    else if (line.includes('moves') || line.includes('appears at')) { const n = nodeIn(line); if (n) fxAt(n, 'step'); moved = true; }
+    else if (line.startsWith('🌑')) { splash('The final night', '<p>Everyone draws up to 5. No more Replenish.</p>', 'red'); sfx('event'); }
+  });
+  if (moved) sfx('move');
+}
+function shake() {
+  const b = $('#boardWrap'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake');
+}
+
+// ---------- sound ----------
+let muted = store.get('wt_mute') === '1';
+function tone(f, t0, dur, type = 'sine', vol = .1, f2) {
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, actx.currentTime + t0);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, actx.currentTime + t0 + dur);
+  g.gain.setValueAtTime(vol, actx.currentTime + t0); g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + t0 + dur);
+  o.connect(g); g.connect(actx.destination); o.start(actx.currentTime + t0); o.stop(actx.currentTime + t0 + dur + .02);
+}
+function noise(t0, dur, vol) {
+  const len = actx.sampleRate * dur, buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = actx.createBufferSource(), g = actx.createGain(); g.gain.value = vol; src.buffer = buf; src.connect(g); g.connect(actx.destination); src.start(actx.currentTime + t0);
+}
+function sfx(kind) {
+  if (muted) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (kind === 'move') { tone(320, 0, .12, 'triangle', .06, 520); }
+    if (kind === 'turn') { tone(660, 0, .18, 'triangle', .08); tone(880, .12, .3, 'triangle', .07); }
+    if (kind === 'clash') { noise(0, .25, .25); tone(140, 0, .3, 'sawtooth', .08, 60); }
+    if (kind === 'bump') { tone(500, 0, .5, 'sine', .09, 90); noise(0, .4, .08); }
+    if (kind === 'event') { tone(98, 0, 1.6, 'sine', .18); tone(196, 0, 1.2, 'sine', .07); tone(147, .05, 1.4, 'triangle', .05); }
+    if (kind === 'shield') { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * .09, .5, 'triangle', .08)); }
+    if (kind === 'reveal') { tone(392, 0, .6, 'sine', .07, 784); }
+    if (kind === 'win') { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * .14, .7, 'triangle', .09)); }
+    if (kind === 'lose') { [392, 349, 311, 262].forEach((f, i) => tone(f, i * .22, .8, 'sine', .09)); }
+  } catch (e) {}
+}
+
+// ---------- celebration ----------
+function embers(colors) {
+  const c = $('#confetti'); const x = c.getContext('2d');
+  c.width = innerWidth; c.height = innerHeight; c.classList.remove('hidden');
+  const ps = Array.from({ length: 140 }, () => ({ x: Math.random() * c.width, y: c.height + Math.random() * 200, vx: (Math.random() - .5) * 1.5, vy: -2 - Math.random() * 4, r: 2 + Math.random() * 4, col: colors[Math.floor(Math.random() * colors.length)], life: 1 }));
+  const t0 = performance.now();
+  (function frame(t) {
+    x.clearRect(0, 0, c.width, c.height);
+    ps.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .015; p.life -= .004; x.globalAlpha = Math.max(0, p.life); x.fillStyle = p.col; x.beginPath(); x.arc(p.x, p.y, p.r, 0, 7); x.fill(); });
+    if (t - t0 < 4500) requestAnimationFrame(frame); else { x.clearRect(0, 0, c.width, c.height); c.classList.add('hidden'); }
+  })(t0);
 }
 
 $('#board').addEventListener('click', e => {
@@ -303,9 +516,11 @@ $('#zoomBtn').onclick = () => {
 function mvText(c) { return c.mv.length ? (c.mv.length === 2 ? `Move ${c.mv[0]}+${c.mv[1]}` : `Move ${c.mv[0]}`) : 'Special move'; }
 function cardHtml(key, extra = '') {
   const c = W.CARDS[key];
-  const zone = c.zone ? ` · ${W.ZONES[c.zone].name}` : '';
-  return `<div class="nm">${esc(c.name)}</div><div class="mv">${mvText(c)}${c.fly ? ' · 🪶' : ''}</div>
-    <div class="tx">${esc(c.text)}</div><div class="dsc">${c.disc ? W.DISC[c.disc].icon + ' ' + W.DISC[c.disc].name : 'Hollow' + zone}</div>${extra}`;
+  const mv = c.mv.length ? c.mv.join('+') : '➜';
+  const tag = c.disc ? `${W.DISC[c.disc].icon} ${W.DISC[c.disc].name}` : c.zone ? `<span class="gem" style="background:${W.ZONES[c.zone].color}"></span>${W.ZONES[c.zone].name} effect` : 'Hollow';
+  return `<div class="chead"><div class="nm">${esc(c.name)}</div><div class="medal" title="${mvText(c)}">${mv}</div></div>
+    <div class="art">${c.disc ? W.DISC[c.disc].icon : '👁'}${c.fly ? '🪶' : ''}${c.react ? '⚡' : ''}</div>
+    <div class="tx">${esc(c.text)}</div><div class="dsc">${tag}</div>${extra}`;
 }
 function renderCardPanel() {
   const el = $('#cardPanel'); el.innerHTML = '';
@@ -337,7 +552,7 @@ function renderHand() {
       btns = `<div class="row">${canPlay ? `<button data-play="${i}">Play</button>` : ''}${tokOk && c.disc === p.token ? `<button data-tok="${i}">Play with token</button>` : ''}</div>`;
       if (!canPlay && !(tokOk && c.disc === p.token)) btns = '<div class="small">No action left to play this.</div>';
     }
-    return `<div class="card ${c.side === 'shadow' ? 'shadow' : ''} ${sel ? 'sel' : ''}" data-card="${i}" style="${c.disc ? '' : ''}">${cardHtml(k, btns)}</div>`;
+    return `<div class="card ${c.side === 'shadow' ? 'shadow' : ''} ${sel ? 'sel' : ''}" data-card="${i}" data-disc="${c.disc || 'hollow'}">${cardHtml(k, btns)}</div>`;
   }).join('');
   el.querySelectorAll('[data-card]').forEach(d => d.onclick = e => {
     if (e.target.closest('button')) return;
@@ -404,7 +619,7 @@ function renderPlayers() {
     const online = lobby.players.find(x => x.name === p.name);
     return `<div class="pl ${S.turn && S.turn.seat === i ? 'turn' : ''}">
       ${p.role === 'shadow' ? '<span class="diamond"></span>' : `<span class="dot" style="background:${seatColor(i)}"></span>`}
-      <span class="who">${esc(p.name)}${i === S.you ? ' (you)' : ''}${p.skip ? ' · skips next' : ''}${S.markers.includes(i) ? ' · marker taken' : ''}${online && !online.online ? ' · offline' : ''}</span>
+      <span class="who">${S.bots && S.bots[i] ? `🤖 ` : ''}${esc(p.name)}${i === S.you ? ' (you)' : ''}${S.bots && S.bots[i] ? ` <span class="muted small">${S.bots[i]}</span>` : ''}${p.skip ? ' · skips next' : ''}${S.markers.includes(i) ? ' · marker taken' : ''}${online && !online.online ? ' · offline' : ''}</span>
       <span class="items">${itemsHtml(i)}</span><span class="muted small">🂠${p.handCount}</span></div>`;
   }).join('');
 }
@@ -432,14 +647,14 @@ function openModal(kind) {
     S.adv.forEach((k, i) => k && opts.push({ src: 'adv' + i, key: k, tag: 'Advanced · discard 2, +1 Valor' }));
     const need = L.src && L.src.startsWith('adv') ? 2 : 1;
     h = `<h2>Learn</h2><p class="small muted">Pick a card, then choose ${L.src ? need : '1 or 2'} card(s) from your hand to discard. The new card goes on top of your deck.</p>
-      <div class="pick">${opts.map(o => `<div class="card ${L.src === o.src ? 'sel' : ''}" data-src="${o.src}">${cardHtml(o.key, `<div class="small"><b>${o.tag}</b></div>`)}</div>`).join('')}
+      <div class="pick">${opts.map(o => `<div class="card ${L.src === o.src ? 'sel' : ''}" data-src="${o.src}" data-disc="${W.CARDS[o.key].disc}">${cardHtml(o.key, `<div class="small"><b>${o.tag}</b></div>`)}</div>`).join('')}
       ${S.acqCount ? `<div class="card ${L.src === 'deck' ? 'sel' : ''}" data-src="deck"><div class="nm">Hidden card</div><div class="tx">Top card of the Spell deck (${S.acqCount} left). Discard 1.</div></div>` : ''}</div>
-      <h3>Discard from your hand</h3><div class="pick">${S.hand.map((k, i) => `<div class="card ${L.d.includes(i) ? 'sel' : ''}" data-d="${i}">${cardHtml(k)}</div>`).join('')}</div>
+      <h3>Discard from your hand</h3><div class="pick">${S.hand.map((k, i) => `<div class="card ${L.d.includes(i) ? 'sel' : ''}" data-d="${i}" data-disc="${W.CARDS[k].disc}">${cardHtml(k)}</div>`).join('')}</div>
       <div class="row"><button class="primary" id="doLearn" ${L.src && L.d.length === need ? '' : 'disabled'}>Learn</button><button data-close>Cancel</button></div>`;
   }
   if (kind === 'rep') {
     h = `<h2>Replenish</h2><p class="small">Choose cards to discard (optional), then draw back up to 5 and stand up your pawns. <b>The Shadow Path will advance one space.</b></p>
-      <div class="pick">${S.hand.map((k, i) => `<div class="card ${ui.rep.includes(i) ? 'sel' : ''}" data-r="${i}">${cardHtml(k)}</div>`).join('')}</div>
+      <div class="pick">${S.hand.map((k, i) => `<div class="card ${ui.rep.includes(i) ? 'sel' : ''}" data-r="${i}" data-disc="${W.CARDS[k].disc}">${cardHtml(k)}</div>`).join('')}</div>
       <div class="row"><button class="primary" id="doRep">Replenish${ui.rep.length ? ` (discard ${ui.rep.length})` : ''}</button><button data-close>Cancel</button></div>`;
   }
   sh.innerHTML = h;
@@ -460,5 +675,7 @@ function openModal(kind) {
 }
 function closeModal() { ui.modal = null; $('#modal').classList.add('hidden'); $('#sheet').innerHTML = ''; }
 
+$('#muteBtn').textContent = muted ? '🔇' : '🔊';
+document.querySelectorAll('[data-addbot]').forEach(b => b.onclick = () => socket.emit('addBot', { level: b.dataset.addbot, side: $('#botSide').value }));
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 show('home');
